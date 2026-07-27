@@ -236,12 +236,14 @@ async def callback_toggle_type(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("tx_edit_cat:"))
 async def callback_edit_cat(callback: CallbackQuery):
+    await callback.answer()
     tx_id = int(callback.data.split(":")[1])
     await callback.message.edit_text("Выберите нужную категорию:", reply_markup=get_category_select_keyboard(tx_id))
 
 
 @router.callback_query(F.data.startswith("tx_set_cat:"))
 async def callback_set_cat(callback: CallbackQuery):
+    await callback.answer()
     parts = callback.data.split(":")
     tx_id = int(parts[1])
     cat_name = parts[2]
@@ -250,7 +252,6 @@ async def callback_set_cat(callback: CallbackQuery):
     async with async_session_maker() as session:
         tx = await update_transaction(session, tx_id, category=cat_name)
         if tx:
-            await callback.answer(f"Категория: {cat_name}")
             icon = "🔴 Расход" if tx.type == "expense" else "🟢 Доход"
             amount_str = format_amount_display(tx.amount, rate)
             text = (
@@ -266,6 +267,7 @@ async def callback_set_cat(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("tx_back:"))
 async def callback_back(callback: CallbackQuery):
+    await callback.answer()
     tx_id = int(callback.data.split(":")[1])
     rate = await get_usd_uzs_rate()
     async with async_session_maker() as session:

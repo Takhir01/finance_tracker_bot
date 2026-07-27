@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 from aiogram import Router, F
 from aiogram.types import Message, BufferedInputFile
@@ -22,17 +23,17 @@ async def cmd_weekly_report(message: Message):
 
     report_text = format_text_report(summary, period_title="За последние 7 дней", usd_rate=rate)
 
-    # Generate Donut chart for expenses in UZS
-    donut_buf = generate_donut_chart(summary["expense_categories"], title="Расходы за неделю", currency="сум")
+    # Generate Donut chart for expenses in UZS in background thread
+    donut_buf = await asyncio.to_thread(generate_donut_chart, summary["expense_categories"], title="Расходы за неделю", currency="сум")
     if donut_buf:
         photo = BufferedInputFile(donut_buf.getvalue(), filename="weekly_expenses.png")
         await message.answer_photo(photo, caption=report_text, parse_mode="HTML")
     else:
         await message.answer(report_text, parse_mode="HTML")
 
-    # Generate daily dynamics chart if there are entries
+    # Generate daily dynamics chart in background thread if there are entries
     if summary["daily_data"]:
-        bar_buf = generate_daily_bar_chart(summary["daily_data"], title="Динамика за неделю", currency="сум")
+        bar_buf = await asyncio.to_thread(generate_daily_bar_chart, summary["daily_data"], title="Динамика за неделю", currency="сум")
         if bar_buf:
             photo_bar = BufferedInputFile(bar_buf.getvalue(), filename="weekly_trends.png")
             await message.answer_photo(photo_bar, caption="📈 <b>Динамика трат и доходов по дням</b>", parse_mode="HTML")
@@ -55,17 +56,17 @@ async def cmd_monthly_report(message: Message):
 
     report_text = format_text_report(summary, period_title=f"{month_name_ru} {now.year}", usd_rate=rate)
 
-    # Generate Donut chart for expenses in UZS
-    donut_buf = generate_donut_chart(summary["expense_categories"], title=f"Расходы за {month_name_ru}", currency="сум")
+    # Generate Donut chart for expenses in UZS in background thread
+    donut_buf = await asyncio.to_thread(generate_donut_chart, summary["expense_categories"], title=f"Расходы за {month_name_ru}", currency="сум")
     if donut_buf:
         photo = BufferedInputFile(donut_buf.getvalue(), filename="monthly_expenses.png")
         await message.answer_photo(photo, caption=report_text, parse_mode="HTML")
     else:
         await message.answer(report_text, parse_mode="HTML")
 
-    # Generate daily trend bar chart
+    # Generate daily trend bar chart in background thread
     if summary["daily_data"]:
-        bar_buf = generate_daily_bar_chart(summary["daily_data"], title=f"Динамика за {month_name_ru}", currency="сум")
+        bar_buf = await asyncio.to_thread(generate_daily_bar_chart, summary["daily_data"], title=f"Динамика за {month_name_ru}", currency="сум")
         if bar_buf:
             photo_bar = BufferedInputFile(bar_buf.getvalue(), filename="monthly_trends.png")
             await message.answer_photo(photo_bar, caption="📈 <b>Динамика расходов и доходов по дням</b>", parse_mode="HTML")
@@ -107,7 +108,7 @@ async def cmd_export_excel(message: Message):
         await msg_status.edit_text("ℹ️ Нет операций для экспорта.")
         return
 
-    excel_buf = export_transactions_to_excel(transactions, usd_rate=rate)
+    excel_buf = await asyncio.to_thread(export_transactions_to_excel, transactions, usd_rate=rate)
     doc = BufferedInputFile(excel_buf.getvalue(), filename=f"finance_report_{user_id}.xlsx")
     await message.answer_document(doc, caption="📊 <b>Ваш полный отчет по финансовым операциям в формате Excel (сум и $).</b>", parse_mode="HTML")
     await msg_status.delete()
