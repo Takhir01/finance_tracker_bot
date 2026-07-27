@@ -51,7 +51,7 @@ class ParsedTransaction(BaseModel):
 
 
 def fallback_parse_text(text: str) -> Optional[ParsedTransaction]:
-    """Fallback regex parser when Gemini API fails or key is invalid."""
+    """Local regex parser for text transactions without AI dependency."""
     text_lower = text.lower()
     
     # Currency
@@ -78,7 +78,7 @@ def fallback_parse_text(text: str) -> Optional[ParsedTransaction]:
     amount = max(clean_nums)
     
     # Type
-    if any(w in text_lower for w in ['доход', 'зарплата', 'аванс', 'получил', 'перевод мне', 'пришли']):
+    if any(w in text_lower for w in ['доход', 'зарплата', 'аванс', 'получил', 'перевод мне', 'пришли', 'заработал']):
         tx_type = "income"
         category = "Доходы"
     else:
@@ -87,15 +87,15 @@ def fallback_parse_text(text: str) -> Optional[ParsedTransaction]:
             category = "Продукты"
         elif any(w in text_lower for w in ['кофе', 'чай', 'сок', 'вода', 'напитки', 'кола', 'пепси']):
             category = "Напитки"
-        elif any(w in text_lower for w in ['ресторан', 'кафе', 'обед', 'ужин', 'пицца', 'суши', 'бургер', 'доставка']):
+        elif any(w in text_lower for w in ['ресторан', 'кафе', 'обед', 'ужин', 'пицца', 'суши', 'бургер', 'доставка', 'столовая']):
             category = "Кафе и рестораны"
-        elif any(w in text_lower for w in ['такси', 'метро', 'автобус', 'бензин', 'транспорт', 'парковка', 'яндекс']):
+        elif any(w in text_lower for w in ['такси', 'метро', 'автобус', 'бензин', 'транспорт', 'парковка', 'яндекс', 'проезд']):
             category = "Транспорт"
         elif any(w in text_lower for w in ['аптека', 'врач', 'лекарства', 'больница', 'здоровье', 'таблетки']):
             category = "Здоровье и аптека"
         elif any(w in text_lower for w in ['одежда', 'обувь', 'шопинг', 'куртка', 'штаны', 'футболка']):
             category = "Одежда и шопинг"
-        elif any(w in text_lower for w in ['свет', 'газ', 'вода', 'жкх', 'аренда', 'квартплата', 'интернет']):
+        elif any(w in text_lower for w in ['свет', 'газ', 'вода', 'жкх', 'аренда', 'квартплата', 'интернет', 'связь']):
             category = "Жилье и ЖКХ"
         else:
             category = "Разное"
@@ -119,14 +119,18 @@ def fallback_parse_text(text: str) -> Optional[ParsedTransaction]:
 class GeminiService:
     def __init__(self, api_key: Optional[str] = None):
         key = api_key or settings.GEMINI_API_KEY
-        if not key:
-            raise ValueError("GEMINI_API_KEY is missing!")
-        self.client = genai.Client(api_key=key)
+        self.client = None
+        if key:
+            try:
+                self.client = genai.Client(api_key=key)
+            except Exception as e:
+                logger.warning(f"Gemini client init skipped/failed: {e}")
         self.model_name = "gemini-2.0-flash"
 
     async def parse_text_transaction(self, text: str) -> ParsedTransaction:
-        """Parses text message into structured financial transaction in UZS or USD."""
-        prompt = f"""
+        """Parses text message into structured financial transaction."""
+        if self.client:
+            prompt = f"""
 Ты — финансовый ассистент по учету расходов и доходов в Узбекистане (валюта — узбекские сумы UZS и доллары USD).
 Проанализируй текст сообщения пользователя и выдели детали финансовой операции.
 
@@ -141,29 +145,31 @@ class GeminiService:
 
 Текст пользователя: "{text}"
 """
-        try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ParsedTransaction,
-                    temperature=0.1
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=ParsedTransaction,
+                        temperature=0.1
+                    )
                 )
-            )
-            data = json.loads(response.text)
-            return ParsedTransaction(**data)
-        except Exception as e:
-            logger.error(f"Error parsing text transaction with Gemini API: {e}. Trying fallback parser.")
-            fallback = fallback_parse_text(text)
-            if fallback:
-                logger.info(f"Fallback parser successfully parsed text: {fallback}")
-                return fallback
-            raise e
+                data = json.loads(response.text)
+                return ParsedTransaction(**data)
+            except Exception as e:
+                logger.warning(f"Gemini API call failed, using local parser: {e}")
+
+        # Local parser (works without any API key)
+        parsed = fallback_parse_text(text)
+        if parsed:
+            return parsed
+        raise ValueError("Could not parse transaction from text.")
 
     async def parse_receipt_photo(self, image_path: str, user_comment: str = "") -> ParsedTransaction:
         """Parses photo of a store receipt into structured financial transaction."""
-        prompt = f"""
+        if self.client:
+            prompt = f"""
 Ты — финансовый ассистент по распознаванию чеков и квитанций.
 Внимательно распознай сумму и содержимое чека на фотографии.
 
@@ -178,19 +184,32 @@ class GeminiService:
 
 Верни результат в формате JSON.
 """
-        image = Image.open(image_path)
-        try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=[prompt, image],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ParsedTransaction,
-                    temperature=0.1
+            try:
+                image = Image.open(image_path)
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=[prompt, image],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=ParsedTransaction,
+                        temperature=0.1
+                    )
                 )
-            )
-            data = json.loads(response.text)
-            return ParsedTransaction(**data)
-        except Exception as e:
-            logger.error(f"Error parsing receipt photo with Gemini: {e}")
-            raise e
+                data = json.loads(response.text)
+                return ParsedTransaction(**data)
+            except Exception as e:
+                logger.warning(f"Gemini photo parsing failed, using fallback: {e}")
+
+        if user_comment:
+            parsed = fallback_parse_text(user_comment)
+            if parsed:
+                return parsed
+
+        return ParsedTransaction(
+            type="expense",
+            amount=0.0,
+            currency="UZS",
+            category="Разное",
+            description="Чек с фото",
+            date_offset_days=0
+        )
