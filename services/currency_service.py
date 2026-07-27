@@ -1,6 +1,5 @@
 import aiohttp
 import logging
-from typing import Float
 
 logger = logging.getLogger(__name__)
 
