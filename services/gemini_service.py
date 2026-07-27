@@ -125,7 +125,7 @@ class GeminiService:
                 self.client = genai.Client(api_key=key)
             except Exception as e:
                 logger.warning(f"Gemini client init skipped/failed: {e}")
-        self.model_name = "gemini-2.0-flash"
+        self.model_name = "gemini-2.5-flash"
 
     async def parse_text_transaction(self, text: str) -> ParsedTransaction:
         """Parses text message into structured financial transaction."""
