@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Optional, Dict, Any, Union
 from PIL import Image
 from pydantic import BaseModel, Field
@@ -49,6 +50,72 @@ class ParsedTransaction(BaseModel):
     )
 
 
+def fallback_parse_text(text: str) -> Optional[ParsedTransaction]:
+    """Fallback regex parser when Gemini API fails or key is invalid."""
+    text_lower = text.lower()
+    
+    # Currency
+    if any(c in text_lower for c in ['$', 'usd', 'доллар', 'баксов', 'баксы']):
+        currency = "USD"
+    else:
+        currency = "UZS"
+        
+    # Extract numbers (e.g. 40000, 40 000, 25.5)
+    numbers = re.findall(r'\b\d[\d\s._]*\d\b|\b\d+\b', text)
+    clean_nums = []
+    for n in numbers:
+        cleaned = n.replace(' ', '').replace('_', '')
+        try:
+            val = float(cleaned)
+            clean_nums.append(val)
+        except ValueError:
+            pass
+            
+    if not clean_nums:
+        return None
+        
+    # Amount: pick maximum number if multiple numbers (e.g. "2 штуки за 40000 сум" -> 40000)
+    amount = max(clean_nums)
+    
+    # Type
+    if any(w in text_lower for w in ['доход', 'зарплата', 'аванс', 'получил', 'перевод мне', 'пришли']):
+        tx_type = "income"
+        category = "Доходы"
+    else:
+        tx_type = "expense"
+        if any(w in text_lower for w in ['арбуз', 'арбузы', 'хлеб', 'молоко', 'продукты', 'еда', 'мясо', 'сыр', 'масло', 'сахар', 'картошка', 'овощи', 'фрукты']):
+            category = "Продукты"
+        elif any(w in text_lower for w in ['кофе', 'чай', 'сок', 'вода', 'напитки', 'кола', 'пепси']):
+            category = "Напитки"
+        elif any(w in text_lower for w in ['ресторан', 'кафе', 'обед', 'ужин', 'пицца', 'суши', 'бургер', 'доставка']):
+            category = "Кафе и рестораны"
+        elif any(w in text_lower for w in ['такси', 'метро', 'автобус', 'бензин', 'транспорт', 'парковка', 'яндекс']):
+            category = "Транспорт"
+        elif any(w in text_lower for w in ['аптека', 'врач', 'лекарства', 'больница', 'здоровье', 'таблетки']):
+            category = "Здоровье и аптека"
+        elif any(w in text_lower for w in ['одежда', 'обувь', 'шопинг', 'куртка', 'штаны', 'футболка']):
+            category = "Одежда и шопинг"
+        elif any(w in text_lower for w in ['свет', 'газ', 'вода', 'жкх', 'аренда', 'квартплата', 'интернет']):
+            category = "Жилье и ЖКХ"
+        else:
+            category = "Разное"
+            
+    date_offset = 0
+    if 'позавчера' in text_lower:
+        date_offset = -2
+    elif 'вчера' in text_lower:
+        date_offset = -1
+        
+    return ParsedTransaction(
+        type=tx_type,
+        amount=amount,
+        currency=currency,
+        category=category,
+        description=text[:100].strip().capitalize(),
+        date_offset_days=date_offset
+    )
+
+
 class GeminiService:
     def __init__(self, api_key: Optional[str] = None):
         key = api_key or settings.GEMINI_API_KEY
@@ -87,7 +154,11 @@ class GeminiService:
             data = json.loads(response.text)
             return ParsedTransaction(**data)
         except Exception as e:
-            logger.error(f"Error parsing text transaction with Gemini: {e}")
+            logger.error(f"Error parsing text transaction with Gemini API: {e}. Trying fallback parser.")
+            fallback = fallback_parse_text(text)
+            if fallback:
+                logger.info(f"Fallback parser successfully parsed text: {fallback}")
+                return fallback
             raise e
 
     async def parse_receipt_photo(self, image_path: str, user_comment: str = "") -> ParsedTransaction:
