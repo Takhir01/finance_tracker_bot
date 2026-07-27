@@ -22,21 +22,7 @@ async def cmd_weekly_report(message: Message):
         summary = await get_period_summary(session, user_id, start_date, now)
 
     report_text = format_text_report(summary, period_title="За последние 7 дней", usd_rate=rate)
-
-    # Generate Donut chart for expenses in UZS in background thread
-    donut_buf = await asyncio.to_thread(generate_donut_chart, summary["expense_categories"], title="Расходы за неделю", currency="сум")
-    if donut_buf:
-        photo = BufferedInputFile(donut_buf.getvalue(), filename="weekly_expenses.png")
-        await message.answer_photo(photo, caption=report_text, parse_mode="HTML")
-    else:
-        await message.answer(report_text, parse_mode="HTML")
-
-    # Generate daily dynamics chart in background thread if there are entries
-    if summary["daily_data"]:
-        bar_buf = await asyncio.to_thread(generate_daily_bar_chart, summary["daily_data"], title="Динамика за неделю", currency="сум")
-        if bar_buf:
-            photo_bar = BufferedInputFile(bar_buf.getvalue(), filename="weekly_trends.png")
-            await message.answer_photo(photo_bar, caption="📈 <b>Динамика трат и доходов по дням</b>", parse_mode="HTML")
+    await message.answer(report_text, parse_mode="HTML")
 
 
 @router.message(F.text.in_({"📅 Месячный отчет", "/monthly"}))
@@ -55,21 +41,7 @@ async def cmd_monthly_report(message: Message):
     ][now.month]
 
     report_text = format_text_report(summary, period_title=f"{month_name_ru} {now.year}", usd_rate=rate)
-
-    # Generate Donut chart for expenses in UZS in background thread
-    donut_buf = await asyncio.to_thread(generate_donut_chart, summary["expense_categories"], title=f"Расходы за {month_name_ru}", currency="сум")
-    if donut_buf:
-        photo = BufferedInputFile(donut_buf.getvalue(), filename="monthly_expenses.png")
-        await message.answer_photo(photo, caption=report_text, parse_mode="HTML")
-    else:
-        await message.answer(report_text, parse_mode="HTML")
-
-    # Generate daily trend bar chart in background thread
-    if summary["daily_data"]:
-        bar_buf = await asyncio.to_thread(generate_daily_bar_chart, summary["daily_data"], title=f"Динамика за {month_name_ru}", currency="сум")
-        if bar_buf:
-            photo_bar = BufferedInputFile(bar_buf.getvalue(), filename="monthly_trends.png")
-            await message.answer_photo(photo_bar, caption="📈 <b>Динамика расходов и доходов по дням</b>", parse_mode="HTML")
+    await message.answer(report_text, parse_mode="HTML")
 
 
 @router.message(F.text.in_({"📜 История операций", "/history"}))
