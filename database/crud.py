@@ -224,3 +224,34 @@ async def validate_and_use_access_link(session: AsyncSession, code: str) -> bool
         link.is_active = False
     await session.commit()
     return True
+
+
+async def get_bot_stats(session: AsyncSession) -> Dict[str, Any]:
+    total_users_res = await session.execute(select(func.count(User.id)))
+    total_users = total_users_res.scalar() or 0
+
+    allowed_users_res = await session.execute(select(func.count(User.id)).where(User.is_allowed == True))
+    allowed_users = allowed_users_res.scalar() or 0
+
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_users_res = await session.execute(select(func.count(User.id)).where(User.created_at >= today_start))
+    today_users = today_users_res.scalar() or 0
+
+    active_users_res = await session.execute(select(func.count(func.distinct(Transaction.user_id))))
+    active_users = active_users_res.scalar() or 0
+
+    total_tx_res = await session.execute(select(func.count(Transaction.id)))
+    total_transactions = total_tx_res.scalar() or 0
+
+    total_links_res = await session.execute(select(func.count(AccessLink.id)))
+    total_links = total_links_res.scalar() or 0
+
+    return {
+        "total_users": total_users,
+        "allowed_users": allowed_users,
+        "today_users": today_users,
+        "active_users": active_users,
+        "total_transactions": total_transactions,
+        "total_links": total_links
+    }
+

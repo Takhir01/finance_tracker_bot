@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from database.db import init_db, async_session_maker
-from database.crud import get_or_create_user, add_transaction, get_period_summary
+from database.crud import get_or_create_user, add_transaction, get_period_summary, get_bot_stats
 from services.gemini_service import GeminiService
 from services.chart_service import generate_donut_chart, generate_daily_bar_chart
 from services.report_service import format_text_report
@@ -30,6 +30,11 @@ async def run_tests():
         now = datetime.utcnow()
         summary = await get_period_summary(session, user_id=99999, start_date=now - timedelta(days=7), end_date=now)
         print(f"Summary calculated: Expense={summary['total_expense']}, Income={summary['total_income']}")
+
+        stats = await get_bot_stats(session)
+        print(f"Bot Stats: Total Users={stats['total_users']}, Allowed={stats['allowed_users']}, Active={stats['active_users']}, Transactions={stats['total_transactions']}")
+        assert stats["total_users"] > 0, "Total users count should be > 0"
+        assert stats["total_transactions"] >= 4, "Total transactions count should be >= 4"
 
     print("3. Testing Gemini API Text Parser...")
     gemini = GeminiService()

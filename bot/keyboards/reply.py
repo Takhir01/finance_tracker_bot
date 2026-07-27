@@ -14,6 +14,9 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
         [
             KeyboardButton(text="🏷 Категории"),
             KeyboardButton(text="🔗 Получить ссылку доступа")
+        ],
+        [
+            KeyboardButton(text="👥 Статистика")
         ]
     ]
     return ReplyKeyboardMarkup(
