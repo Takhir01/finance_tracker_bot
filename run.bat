@@ -1,0 +1,6 @@
+@echo off
+echo Installing requirements...
+pip install -r requirements.txt
+echo Starting AI Finance Tracker Bot...
+python main.py
+pause
