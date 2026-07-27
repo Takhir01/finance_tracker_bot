@@ -10,3 +10,8 @@ services:
     volumes:
       - ./finance_bot.db:/app/finance_bot.db
       - ./downloads:/app/downloads
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

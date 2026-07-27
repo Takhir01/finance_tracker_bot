@@ -1,4 +1,4 @@
-import os
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from config import settings
 from database.models import Base
@@ -12,6 +12,9 @@ async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_
 
 async def init_db():
     async with engine.begin() as conn:
+        await conn.execute(text("PRAGMA journal_mode=WAL;"))
+        await conn.execute(text("PRAGMA synchronous=NORMAL;"))
+        await conn.execute(text("PRAGMA busy_timeout=5000;"))
         await conn.run_sync(Base.metadata.create_all)
 
 
