@@ -134,6 +134,59 @@ async def handle_photo_receipt(message: Message):
     await msg_status.edit_text(text, parse_mode="HTML", reply_markup=get_tx_confirm_keyboard(tx.id, tx.type))
 
 
+@router.message(F.voice)
+async def handle_voice_transaction(message: Message):
+    msg_status = await message.answer("🎙 <i>Слушаю и распознаю голосовое сообщение...</i>", parse_mode="HTML")
+
+    voice = message.voice
+    file_info = await message.bot.get_file(voice.file_id)
+    downloaded_file = await message.bot.download_file(file_info.file_path)
+    audio_bytes = downloaded_file.read()
+
+    try:
+        gemini = get_gemini()
+        parsed = await gemini.parse_voice_transaction(audio_bytes, mime_type="audio/ogg")
+        rate = await get_usd_uzs_rate()
+    except Exception as e:
+        logger.error(f"Error parsing voice transaction: {e}")
+        await msg_status.edit_text("❌ Не удалось распознать голосовое сообщение. Попробуйте надиктовать отчетливее.", parse_mode="HTML")
+        return
+
+    if parsed.currency == "USD":
+        amount_uzs = parsed.amount * rate
+    else:
+        amount_uzs = parsed.amount
+
+    tx_date = datetime.utcnow() + timedelta(days=parsed.date_offset_days)
+
+    async with async_session_maker() as session:
+        tx = await add_transaction(
+            session=session,
+            user_id=message.from_user.id,
+            tx_type=parsed.type,
+            amount=amount_uzs,
+            category=parsed.category,
+            description=parsed.description,
+            raw_text="Голосовое сообщение",
+            date=tx_date
+        )
+
+    icon = "🔴 Расход" if tx.type == "expense" else "🟢 Доход"
+    amount_str = format_amount_display(tx.amount, rate)
+
+    text = (
+        f"🎙 <b>Голосовая операция распознана!</b>\n\n"
+        f"<b>Тип:</b> {icon}\n"
+        f"<b>Сумма:</b> {amount_str}\n"
+        f"<b>Категория:</b> {tx.category}\n"
+        f"<b>Описание:</b> {tx.description or '—'}\n"
+        f"<b>Курс ЦБ:</b> 1 USD = {rate:,.0f} сум\n".replace(',', ' ') +
+        f"<b>Дата:</b> {tx.date.strftime('%Y-%m-%d %H:%M')}\n"
+    )
+    await msg_status.edit_text(text, parse_mode="HTML", reply_markup=get_tx_confirm_keyboard(tx.id, tx.type))
+
+
+
 @router.callback_query(F.data.startswith("tx_confirm:"))
 async def callback_confirm_tx(callback: CallbackQuery):
     tx_id = int(callback.data.split(":")[1])

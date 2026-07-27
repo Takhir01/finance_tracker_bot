@@ -213,3 +213,42 @@ class GeminiService:
             description="Чек с фото",
             date_offset_days=0
         )
+
+    async def parse_voice_transaction(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> ParsedTransaction:
+        """Parses voice audio message into structured financial transaction using Gemini 2.5 Flash."""
+        if self.client:
+            prompt = f"""
+Ты — финансовый ассистент по распознаванию голосовых сообщений.
+Прослушай аудиозапись пользователя и выдели детали финансовой операции.
+
+Существующие категории: {', '.join(DEFAULT_CATEGORIES)}.
+Правила:
+1. Распознай произнесенные слова пользователя.
+2. Определи тип операции: 'expense' (расход, трата, покупка) или 'income' (доход, зарплата, перевод мне, аванс).
+3. Выдели итоговую сумму в числах.
+4. Валюта: Если сказано $, usd, доллар, баксов — установи currency = "USD". Во всех остальных случаях currency = "UZS" (сумы).
+5. Подбери наилучшую категорию из списка выше или создай короткую понятную категорию на русском языке.
+6. Сделай короткое описание произнесенной покупки.
+7. Если сказано время ("вчера", "позавчера"), определи date_offset_days (-1 для вчера, -2 для позавчера).
+
+Верни результат в формате JSON.
+"""
+            try:
+                audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=[prompt, audio_part],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=ParsedTransaction,
+                        temperature=0.1
+                    )
+                )
+                data = json.loads(response.text)
+                return ParsedTransaction(**data)
+            except Exception as e:
+                logger.error(f"Gemini voice parsing error: {e}")
+                raise e
+        else:
+            raise ValueError("Gemini API key is required to parse voice messages.")
+
